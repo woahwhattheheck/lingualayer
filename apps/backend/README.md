@@ -79,12 +79,24 @@ apps/backend/
 ├── package.json
 ├── tsconfig.json
 ├── README.md
+├── migrations/
+│   └── 001_datasets.sql      # Indexer schema (datasets + cursor)
 └── src/
     ├── index.ts              # Fastify bootstrap, CORS, route registration
     ├── config/env.ts         # Typed environment
+    ├── db/pool.ts            # Lazy Postgres pool (shared by API + indexer)
+    ├── indexer/              # Soroban event indexer → Postgres
+    │   ├── index.ts          # Worker entrypoint (npm run indexer:start)
+    │   ├── poller.ts         # Fetch → decode → upsert → advance-cursor loop
+    │   ├── decode.ts         # Pure ScVal → domain-record decoding
+    │   ├── rpc.ts            # Soroban RPC `getEvents` adapter
+    │   ├── store.ts          # Idempotent upserts + cursor persistence
+    │   └── types.ts          # Shared indexer types
     └── routes/
         ├── health.ts         # GET /health
-        └── v1/index.ts       # Versioned API surface (expand here)
+        └── v1/
+            ├── index.ts      # Versioned API surface
+            └── datasets.ts   # GET /datasets, /datasets/:id, /indexer/status
 ```
 
 ---
@@ -130,7 +142,9 @@ Set `CORS_ORIGIN` in `.env` to match the web origin (e.g. `http://localhost:3000
 | `npm run dev` | `tsx watch` — reload on change |
 | `npm run build` | Compile to `dist/` |
 | `npm start` | Run compiled server |
+| `npm run indexer:start` | Run the DatasetRegistry event indexer worker |
 | `npm run lint` | `tsc --noEmit` typecheck |
+| `npm test` | Run the Vitest unit suite |
 
 ---
 
@@ -144,6 +158,12 @@ Set `CORS_ORIGIN` in `.env` to match the web origin (e.g. `http://localhost:3000
 | `PORT` | `8080` | Listen port |
 | `API_PREFIX` | `/api/v1` | Prefix for versioned routes |
 | `CORS_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS |
+| `DATABASE_URL` | _(unset)_ | Postgres connection string. Required by the indexer; dataset routes return 503 without it. |
+| `SOROBAN_RPC_URL` | `https://soroban-testnet.stellar.org` | RPC endpoint the indexer polls for events. |
+| `DATASET_REGISTRY_CONTRACT_ID` | _(testnet address)_ | Contract whose events are indexed. |
+| `INDEXER_START_LEDGER` | `1` | Ledger to start from when no cursor exists. |
+| `INDEXER_POLL_INTERVAL_MS` | `5000` | Delay between poll cycles. |
+| `INDEXER_PAGE_SIZE` | `100` | Max events fetched per poll. |
 
 ### Production / integration (plan — **do not commit secrets**)
 
@@ -163,6 +183,9 @@ Set `CORS_ORIGIN` in `.env` to match the web origin (e.g. `http://localhost:3000
 | ------ | ---- | ----------- |
 | GET | `/health` | Liveness for load balancers & CI |
 | GET | `/api/v1/meta` | Service name / version |
+| GET | `/api/v1/datasets` | List indexed datasets (`?language=&owner=&limit=&offset=`) |
+| GET | `/api/v1/datasets/:id` | Fetch a single indexed dataset |
+| GET | `/api/v1/indexer/status` | Cursor position + indexed row count |
 
 ### Planned themes (domain routes — implement under `src/routes/v1/`)
 
@@ -172,10 +195,36 @@ Set `CORS_ORIGIN` in `.env` to match the web origin (e.g. `http://localhost:3000
 
 ---
 
+## 🔎 DatasetRegistry event indexer
+
+The indexer syncs `DatasetRegistry` provenance events into Postgres so the API
+can serve dataset lists/details without hitting the chain on every request.
+
+**Pipeline:** poll Soroban RPC `getEvents` for the contract → decode each
+`("dataset", "registered")` event's `ScVal` payload → idempotently `UPSERT` into
+`datasets` → advance a persisted `indexer_cursor`. Restarts resume from the
+cursor, and replaying an event is a no-op (upsert on `dataset_id`), so the
+indexer is safe to crash and restart mid-page.
+
+```bash
+# 1. Create the schema (or let the worker create it on boot)
+psql "$DATABASE_URL" -f migrations/001_datasets.sql
+
+# 2. Run the worker
+DATABASE_URL=postgres://... npm run indexer:start
+```
+
+The event is emitted on-chain by `DatasetRegistry::register_dataset` (see
+[`contracts/dataset-registry`](../../contracts/dataset-registry/src/lib.rs)).
+Decode and poll logic are pure and covered by Vitest (`npm test`).
+
+---
+
 ## 🧪 Testing & quality
 
 ```bash
-npm run lint
+npm run lint   # typecheck
+npm test       # unit tests (decode + poll cycle)
 ```
 
 CI should mirror this (see [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)).

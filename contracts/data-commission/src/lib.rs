@@ -1,7 +1,4 @@
 #![cfg_attr(not(test), no_std)]
-#[cfg(not(test))]
-#[macro_use]
-#![no_std]
 extern crate alloc;
 
 use soroban_sdk::{
@@ -527,17 +524,13 @@ mod tests {
         client.fulfil_commission(&com_id, &fulfiller, &String::from_str(&env, "ds_3"));
         client.approve_milestone(&com_id, &0);
 
-        // Advance past deadline so anyone can cancel
-        env.ledger().set(LedgerInfo {
-            sequence_number: deadline + 1,
-            timestamp: 0,
-            protocol_version: 21,
-            network_id: Default::default(),
-            base_reserve: 5_000_000,
-            min_temp_entry_ttl: 16,
-            min_persistent_entry_ttl: 4096,
-            max_entry_ttl: 7_776_000,
-        });
+        // Advance past deadline so anyone can cancel. Keep every other field
+        // (notably `protocol_version`) as the host already has them — the SDK
+        // rejects moving `protocol_version` backwards, so a hardcoded value
+        // here would go stale as soon as the SDK's default outpaces it.
+        let mut ledger_info = env.ledger().get();
+        ledger_info.sequence_number = deadline + 1;
+        env.ledger().set(ledger_info);
 
         client.cancel_commission(&com_id);
 

@@ -7,5 +7,7 @@ rust-version = "1.78"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# `alloc` is required by the `format!` calls used to build dataset/reputation
+# storage keys and ids in a `#![no_std]` crate (mirrors `data-commission`).
 [dependencies]
 soroban-sdk = { workspace = true }
