@@ -38,7 +38,6 @@ const schema = z.object({
   JWT_TTL_SECONDS: z.coerce.number().default(3600),
 
   // QualityOracle curator leaderboard
-  SOROBAN_RPC_URL: z.string().default("https://soroban-testnet.stellar.org"),
   QUALITY_ORACLE_CONTRACT_ID: z.string().optional(),
   LEADERBOARD_CACHE_TTL_MS: z.coerce.number().default(30_000),
 });
