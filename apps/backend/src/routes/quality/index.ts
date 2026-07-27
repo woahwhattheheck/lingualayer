@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
   Account,
+  BASE_FEE,
   Contract,
   Keypair,
   Networks,
@@ -11,6 +12,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { config } from "../../config/env.js";
+import { validateAttestQualityInput } from "./prepare.js";
 
 const networkPassphrase =
   config.stellarNetwork === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
@@ -122,4 +124,70 @@ export const qualityRoutes: FastifyPluginAsync = async (app) => {
       }
     },
   );
+
+  /**
+   * Prepares (builds + simulates) an `attest_quality` invocation and returns
+   * its assembled, unsigned XDR. The curator's wallet signs the returned
+   * transaction client-side and submits it — this endpoint never holds a
+   * curator secret key. `curator` is both the contract argument and the
+   * transaction source account, since `attest_quality` calls
+   * `curator.require_auth()`.
+   */
+  app.post<{ Body: unknown }>("/quality/attest/prepare", async (request, reply) => {
+    const validation = validateAttestQualityInput(request.body);
+    if (!validation.ok) {
+      return reply.code(400).send({ error: validation.error });
+    }
+    const { curator, datasetId, score, rubricHash } = validation.value;
+
+    let qualityOracle: Contract;
+    try {
+      qualityOracle = loadQualityOracle();
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(500).send({ error: "QUALITY_ORACLE_CONTRACT_ID is not configured" });
+    }
+
+    let account: Account;
+    try {
+      account = await rpcServer.getAccount(curator);
+    } catch (err) {
+      app.log.warn(err);
+      return reply.code(400).send({
+        error: `Couldn't load curator account ${curator} from the network — is it funded on ${config.stellarNetwork}?`,
+      });
+    }
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase,
+    })
+      .addOperation(
+        qualityOracle.call(
+          "attest_quality",
+          nativeToScVal(curator, { type: "address" }),
+          nativeToScVal(datasetId, { type: "string" }),
+          nativeToScVal(score, { type: "u32" }),
+          nativeToScVal(Buffer.from(rubricHash, "hex"), { type: "bytes" }),
+        ),
+      )
+      .setTimeout(30)
+      .build();
+
+    let prepared;
+    try {
+      prepared = await rpcServer.prepareTransaction(tx);
+    } catch (err) {
+      app.log.warn(err);
+      return reply.code(502).send({
+        error:
+          "Simulating attest_quality failed — the curator may not be registered, may be slashed, or the contract rejected this call.",
+      });
+    }
+
+    return {
+      transaction: prepared.toXDR(),
+      network_passphrase: networkPassphrase,
+    };
+  });
 };
