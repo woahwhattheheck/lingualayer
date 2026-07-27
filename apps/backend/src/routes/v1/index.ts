@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { datasetRoutes } from "./datasets.js";
 import { sep10Routes } from "../sep10/index.js";
 import { qualityRoutes } from "../quality/index.js";
+import { commissionRoutes } from "../commissions/index.js";
 
 export const v1Routes: FastifyPluginAsync = async (app) => {
   app.get("/meta", async () => ({
@@ -14,6 +15,7 @@ export const v1Routes: FastifyPluginAsync = async (app) => {
   await app.register(datasetRoutes);
   await app.register(sep10Routes);
   await app.register(qualityRoutes);
+  await app.register(commissionRoutes);
 
   // TODO: routes for contract invocation prep, webhook ingestion, admin ops
 };

@@ -39,6 +39,7 @@ const schema = z.object({
 
   // QualityOracle curator leaderboard
   QUALITY_ORACLE_CONTRACT_ID: z.string().optional(),
+  DATA_COMMISSION_CONTRACT_ID: z.string().optional(),
   LEADERBOARD_CACHE_TTL_MS: z.coerce.number().default(30_000),
 });
 
@@ -70,5 +71,6 @@ export const config = {
 
   sorobanRpcUrl: raw.SOROBAN_RPC_URL,
   qualityOracleContractId: raw.QUALITY_ORACLE_CONTRACT_ID,
+  dataCommissionContractId: raw.DATA_COMMISSION_CONTRACT_ID,
   leaderboardCacheTtlMs: raw.LEADERBOARD_CACHE_TTL_MS,
 };
