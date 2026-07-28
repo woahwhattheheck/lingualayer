@@ -39,4 +39,7 @@ Thumbs.db
 # Local vendor patches and generated lock file
 vendor/
 Cargo.lock
+
+# Deploy script output (live contract IDs per run — see contracts/deployments/README.md)
+contracts/deployments/*.env
 contracts/data-commission/test_snapshots/
