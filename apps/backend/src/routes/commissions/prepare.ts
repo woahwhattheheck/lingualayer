@@ -79,3 +79,17 @@ export function validatePostCommissionInput(body: unknown): PostCommissionValida
     },
   };
 }
+
+/**
+ * post_commission's on-chain transfer traps on an underfunded commissioner,
+ * which otherwise only surfaces after the wallet has already signed.
+ * Checking the balance upfront lets /commissions/prepare reject with a
+ * message that names the actual shortfall instead of a generic contract
+ * trap later.
+ */
+export function insufficientBalanceError(balance: bigint, required: bigint): string {
+  return (
+    `Commissioner has insufficient bounty token balance: ${balance.toString()} available, ` +
+    `${required.toString()} required. Fund the account before preparing this commission.`
+  );
+}

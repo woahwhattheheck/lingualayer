@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
-import { validatePostCommissionInput } from "./prepare.js";
+import { insufficientBalanceError, validatePostCommissionInput } from "./prepare.js";
 
 const COMMISSIONER = Keypair.random().publicKey();
 const TOKEN = StrKey.encodeContract(Buffer.alloc(32, 1));
@@ -44,5 +44,19 @@ describe("validatePostCommissionInput", () => {
     expect(validatePostCommissionInput({ ...validBody(), deadlineLedger: 0 })).toMatchObject({ ok: false });
     expect(validatePostCommissionInput({ ...validBody(), minSampleCount: 1.2 })).toMatchObject({ ok: false });
     expect(validatePostCommissionInput({ ...validBody(), minDurationSeconds: 4_294_967_296 })).toMatchObject({ ok: false });
+  });
+});
+
+describe("insufficientBalanceError", () => {
+  it("names both the available and required amounts", () => {
+    const message = insufficientBalanceError(500n, 1_000_000_000n);
+    expect(message).toContain("500");
+    expect(message).toContain("1000000000");
+  });
+
+  it("stringifies bigints without scientific notation or precision loss", () => {
+    const huge = 123_456_789_012_345_678n;
+    const message = insufficientBalanceError(0n, huge);
+    expect(message).toContain(huge.toString());
   });
 });

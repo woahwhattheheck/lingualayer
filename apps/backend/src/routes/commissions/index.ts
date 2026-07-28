@@ -3,13 +3,15 @@ import {
   Account,
   BASE_FEE,
   Contract,
+  Keypair,
   Networks,
   TransactionBuilder,
   nativeToScVal,
+  scValToNative,
   rpc,
 } from "@stellar/stellar-sdk";
 import { config } from "../../config/env.js";
-import { validatePostCommissionInput } from "./prepare.js";
+import { insufficientBalanceError, validatePostCommissionInput } from "./prepare.js";
 
 const networkPassphrase = config.stellarNetwork === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
 const rpcServer = new rpc.Server(config.sorobanRpcUrl);
@@ -19,6 +21,29 @@ function loadDataCommission(): Contract {
     throw new Error("DATA_COMMISSION_CONTRACT_ID is not configured");
   }
   return new Contract(config.dataCommissionContractId);
+}
+
+/**
+ * Reads a SAC token's balance for `holder` via simulation only (no auth,
+ * no submission) — a fresh, unfunded keypair as the tx source is enough
+ * since `balance` is a read-only view function.
+ */
+async function getTokenBalance(tokenContractId: string, holder: string): Promise<bigint> {
+  const token = new Contract(tokenContractId);
+  const source = new Account(Keypair.random().publicKey(), "0");
+  const tx = new TransactionBuilder(source, { fee: "100", networkPassphrase })
+    .addOperation(token.call("balance", nativeToScVal(holder, { type: "address" })))
+    .setTimeout(30)
+    .build();
+
+  const sim = await rpcServer.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`balance simulation failed for token ${tokenContractId}: ${sim.error}`);
+  }
+  if (!sim.result) {
+    throw new Error(`balance simulation for token ${tokenContractId} returned no result`);
+  }
+  return scValToNative(sim.result.retval) as bigint;
 }
 
 export const commissionRoutes: FastifyPluginAsync = async (app) => {
@@ -48,6 +73,20 @@ export const commissionRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({
         error: `Couldn't load commissioner account ${input.commissioner} from the network — is it funded on ${config.stellarNetwork}?`,
       });
+    }
+
+    const requiredAmount = BigInt(input.bountyAmount);
+    let balance: bigint;
+    try {
+      balance = await getTokenBalance(input.bountyToken, input.commissioner);
+    } catch (err) {
+      app.log.warn(err);
+      return reply.code(502).send({
+        error: "Couldn't verify the commissioner's bounty token balance — check the bountyToken contract address.",
+      });
+    }
+    if (balance < requiredAmount) {
+      return reply.code(400).send({ error: insufficientBalanceError(balance, requiredAmount) });
     }
 
     const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
