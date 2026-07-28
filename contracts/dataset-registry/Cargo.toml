@@ -11,3 +11,10 @@ crate-type = ["cdylib", "rlib"]
 # storage keys and ids in a `#![no_std]` crate (mirrors `data-commission`).
 [dependencies]
 soroban-sdk = { workspace = true }
+access-control = { path = "../access-control" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

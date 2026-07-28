@@ -70,13 +70,47 @@ pub struct DataCommission;
 
 #[contractimpl]
 impl DataCommission {
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&symbol_short!("admin")) {
-            panic!("already initialized");
-        }
-        admin.require_auth();
-        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    /// `recovery` is a separate address that can force an admin handoff via
+    /// `recovery_takeover` without the current admin's cooperation — see
+    /// the `access-control` crate's docs for why this exists and why it
+    /// must differ from `admin`.
+    pub fn initialize(env: Env, admin: Address, recovery: Address) {
+        access_control::init(&env, &admin, &recovery);
         env.storage().instance().set(&symbol_short!("com_cnt"), &0u32);
+    }
+
+    /// Current admin proposes `new_admin`. Takes effect only once
+    /// `new_admin` calls `accept_admin` themselves.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        access_control::propose_admin(&env, &new_admin);
+    }
+
+    /// The pending admin accepts the role. Returns the new admin address.
+    pub fn accept_admin(env: Env) -> Address {
+        access_control::accept_admin(&env)
+    }
+
+    /// Emergency handoff: the recovery address forces admin to `new_admin`
+    /// immediately, with no cooperation required from the current admin.
+    pub fn recovery_takeover(env: Env, new_admin: Address) {
+        access_control::recovery_takeover(&env, &new_admin);
+    }
+
+    /// Current admin rotates the recovery address.
+    pub fn set_recovery(env: Env, new_recovery: Address) {
+        access_control::set_recovery(&env, &new_recovery);
+    }
+
+    pub fn admin(env: Env) -> Address {
+        access_control::admin(&env)
+    }
+
+    pub fn recovery_address(env: Env) -> Address {
+        access_control::recovery(&env)
+    }
+
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        access_control::pending_admin(&env)
     }
 
     pub fn post_commission(
@@ -187,11 +221,7 @@ impl DataCommission {
     /// - When the last pending milestone is released the commission
     ///   transitions to `Fulfilled`.
     pub fn approve_milestone(env: Env, commission_id: String, milestone_index: u32) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("admin"))
-            .expect("not initialized");
+        let admin = access_control::admin(&env);
         admin.require_auth();
 
         let mut comm: Commission = env
@@ -243,11 +273,7 @@ impl DataCommission {
         fulfiller: Address,
         dataset_id: String,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("admin"))
-            .expect("not initialized");
+        let admin = access_control::admin(&env);
         admin.require_auth();
 
         let mut comm: Commission = env
@@ -322,7 +348,7 @@ impl DataCommission {
     }
 
     pub fn version(_env: Env) -> u32 {
-        2
+        3
     }
 }
 
@@ -374,7 +400,8 @@ mod tests {
         let amount: i128 = 5_000_000_000; // 500 USDC
         let token = mint_token(&env, &admin, &commissioner, amount);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "en"),
@@ -405,7 +432,8 @@ mod tests {
         let amount: i128 = 5_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, amount);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "fr"),
@@ -440,7 +468,8 @@ mod tests {
         let total: i128 = 20_000_000_000; // 2 000 USDC
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "de"),
@@ -497,7 +526,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let deadline = future(&env, 300);
         let com_id = client.post_commission(
             &commissioner,
@@ -551,7 +581,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "ko"),
@@ -599,7 +630,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "zh"),
@@ -621,5 +653,64 @@ mod tests {
                 }],
             ),
         );
+    }
+}
+
+// ── Admin handoff ────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup() -> (Env, DataCommissionClient<'static>, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(DataCommission, ());
+        let client = DataCommissionClient::new(&env, &id);
+        let admin = Address::generate(&env);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
+        (env, client, admin, recovery)
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let (_env, client, _admin, _recovery) = setup();
+        let rescuer = Address::generate(&_env);
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
+    }
+
+    /// After a full propose/accept handoff, admin-gated calls (which read the
+    /// current admin internally rather than taking it as a parameter) must
+    /// still authorize correctly against the *new* admin.
+    #[test]
+    fn fulfil_commission_still_works_after_admin_rotation() {
+        let (env, client, admin, _recovery) = setup();
+        let commissioner = Address::generate(&env);
+        let fulfiller = Address::generate(&env);
+        let amount: i128 = 1_000_000_000;
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        soroban_sdk::token::StellarAssetClient::new(&env, &token_id).mint(&commissioner, &amount);
+
+        let com_id = client.post_commission(
+            &commissioner,
+            &String::from_str(&env, "am"),
+            &soroban_sdk::BytesN::from_array(&env, &[9u8; 32]),
+            &token_id,
+            &amount,
+            &10,
+            &3600,
+            &(env.ledger().sequence() + 100),
+        );
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+        assert_eq!(client.admin(), new_admin);
+
+        client.fulfil_commission(&com_id, &fulfiller, &String::from_str(&env, "ds_am"));
+        assert_eq!(client.get_commission(&com_id).state, CommissionState::Fulfilled);
     }
 }

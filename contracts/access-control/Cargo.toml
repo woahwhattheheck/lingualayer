@@ -1,15 +1,14 @@
 [package]
-name = "data-commission"
+name = "access-control"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.78"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
-access-control = { path = "../access-control" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

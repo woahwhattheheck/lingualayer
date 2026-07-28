@@ -83,13 +83,47 @@ pub struct DatasetRegistry;
 
 #[contractimpl]
 impl DatasetRegistry {
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&symbol_short!("admin")) {
-            panic!("already initialized");
-        }
-        admin.require_auth();
-        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    /// `recovery` is a separate address that can force an admin handoff via
+    /// `recovery_takeover` without the current admin's cooperation — see
+    /// the `access-control` crate's docs for why this exists and why it
+    /// must differ from `admin`.
+    pub fn initialize(env: Env, admin: Address, recovery: Address) {
+        access_control::init(&env, &admin, &recovery);
         env.storage().instance().set(&symbol_short!("count"), &0u32);
+    }
+
+    /// Current admin proposes `new_admin`. Takes effect only once
+    /// `new_admin` calls `accept_admin` themselves.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        access_control::propose_admin(&env, &new_admin);
+    }
+
+    /// The pending admin accepts the role. Returns the new admin address.
+    pub fn accept_admin(env: Env) -> Address {
+        access_control::accept_admin(&env)
+    }
+
+    /// Emergency handoff: the recovery address forces admin to `new_admin`
+    /// immediately, with no cooperation required from the current admin.
+    pub fn recovery_takeover(env: Env, new_admin: Address) {
+        access_control::recovery_takeover(&env, &new_admin);
+    }
+
+    /// Current admin rotates the recovery address.
+    pub fn set_recovery(env: Env, new_recovery: Address) {
+        access_control::set_recovery(&env, &new_recovery);
+    }
+
+    pub fn admin(env: Env) -> Address {
+        access_control::admin(&env)
+    }
+
+    pub fn recovery_address(env: Env) -> Address {
+        access_control::recovery(&env)
+    }
+
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        access_control::pending_admin(&env)
     }
 
     pub fn register_dataset(
@@ -212,14 +246,67 @@ impl DatasetRegistry {
     }
 
     pub fn version(_env: Env) -> u32 {
-        3
+        4
+    }
+}
+
+// Soroban-VM tests for the admin-handoff wrapper methods. The comment this
+// replaced said testutils couldn't compile here at all due to a transitive
+// rand_core/ed25519_dalek conflict; that no longer reproduces on the
+// current toolchain/lockfile (the other 3 contracts already exercise
+// testutils successfully), so these are exercised the same way as
+// dataset-registry's siblings rather than left untested.
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (DatasetRegistryClient<'_>, Address, Address) {
+        env.mock_all_auths();
+        let id = env.register(DatasetRegistry, ());
+        let client = DatasetRegistryClient::new(env, &id);
+        let admin = Address::generate(env);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery);
+        (client, admin, recovery)
+    }
+
+    #[test]
+    #[should_panic(expected = "recovery must differ from admin")]
+    fn initialize_rejects_recovery_equal_to_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(DatasetRegistry, ());
+        let client = DatasetRegistryClient::new(&env, &id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &admin);
+    }
+
+    #[test]
+    fn propose_then_accept_transfers_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let successor = Address::generate(&env);
+
+        client.propose_admin(&successor);
+        assert_eq!(client.pending_admin(), Some(successor.clone()));
+
+        client.accept_admin();
+        assert_eq!(client.admin(), successor);
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let rescuer = Address::generate(&env);
+
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
     }
 }
 
 // Pure-Rust tests for the zero-hash guard — no soroban VM required.
-// The soroban testutils feature is intentionally excluded from dev-dependencies
-// to avoid a transitive rand_core/ed25519_dalek version conflict in
-// soroban-env-host that prevents test compilation on current stable Rust.
 // These tests verify the precise byte-level predicate that guards on-chain storage.
 #[cfg(test)]
 mod tests {
