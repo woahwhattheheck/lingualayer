@@ -83,14 +83,48 @@ pub struct QualityOracle;
 impl QualityOracle {
     /// Initialise the contract. `min_stake` is the minimum stroops a curator
     /// must commit when registering — this is the amount at risk of slashing.
-    pub fn initialize(env: Env, admin: Address, min_stake: u64) {
-        if env.storage().instance().has(&symbol_short!("admin")) {
-            panic!("already initialized");
-        }
-        admin.require_auth();
-        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    /// `recovery` is a separate address that can force an admin handoff via
+    /// `recovery_takeover` without the current admin's cooperation — see
+    /// the `access-control` crate's docs for why this exists and why it
+    /// must differ from `admin`.
+    pub fn initialize(env: Env, admin: Address, recovery: Address, min_stake: u64) {
+        access_control::init(&env, &admin, &recovery);
         env.storage().instance().set(&symbol_short!("cur_cnt"), &0u32);
         env.storage().instance().set(&symbol_short!("min_stk"), &min_stake);
+    }
+
+    /// Current admin proposes `new_admin`. Takes effect only once
+    /// `new_admin` calls `accept_admin` themselves.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        access_control::propose_admin(&env, &new_admin);
+    }
+
+    /// The pending admin accepts the role. Returns the new admin address.
+    pub fn accept_admin(env: Env) -> Address {
+        access_control::accept_admin(&env)
+    }
+
+    /// Emergency handoff: the recovery address forces admin to `new_admin`
+    /// immediately, with no cooperation required from the current admin.
+    pub fn recovery_takeover(env: Env, new_admin: Address) {
+        access_control::recovery_takeover(&env, &new_admin);
+    }
+
+    /// Current admin rotates the recovery address.
+    pub fn set_recovery(env: Env, new_recovery: Address) {
+        access_control::set_recovery(&env, &new_recovery);
+    }
+
+    pub fn admin(env: Env) -> Address {
+        access_control::admin(&env)
+    }
+
+    pub fn recovery_address(env: Env) -> Address {
+        access_control::recovery(&env)
+    }
+
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        access_control::pending_admin(&env)
     }
 
     /// Register as a curator with an on-chain stake commitment.
@@ -138,15 +172,7 @@ impl QualityOracle {
     /// Admin slashes a curator for malicious attestations. Zeroes their stake
     /// and permanently bars them from submitting further attestations.
     pub fn slash_curator(env: Env, admin: Address, curator: Address) {
-        let stored_admin: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("admin"))
-            .expect("not initialized");
-        if admin != stored_admin {
-            panic!("unauthorized");
-        }
-        admin.require_auth();
+        access_control::require_admin(&env, &admin);
         let key = StorageKey::Curator(curator.clone());
         let mut record: CuratorRecord = env
             .storage()
@@ -323,7 +349,7 @@ impl QualityOracle {
     }
 
     pub fn version(_env: Env) -> u32 {
-        2
+        3
     }
 }
 
@@ -341,7 +367,8 @@ mod tests {
         let id = env.register_contract(None, QualityOracle);
         let client = QualityOracleClient::new(env, &id);
         let admin = Address::generate(env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery, &1_000_000);
         (client, admin)
     }
 
@@ -430,7 +457,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator_a = Address::generate(&env);
         let curator_b = Address::generate(&env);
@@ -451,7 +479,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator = Address::generate(&env);
         client.register_curator(&curator, &1_000_000);
@@ -476,7 +505,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let stranger = Address::generate(&env);
         let stats = client.get_curator_stats(&stranger);
@@ -494,10 +524,74 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator = Address::generate(&env);
         client.register_curator(&curator, &1_000_000);
         client.register_curator(&curator, &1_000_000);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Admin handoff
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (QualityOracleClient<'_>, Address, Address) {
+        env.mock_all_auths();
+        let id = env.register(QualityOracle, ());
+        let client = QualityOracleClient::new(env, &id);
+        let admin = Address::generate(env);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery, &1_000_000);
+        (client, admin, recovery)
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let rescuer = Address::generate(&env);
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
+    }
+
+    /// After a full propose/accept handoff, the *old* admin can no longer
+    /// pass slash_curator's stored-admin comparison — this is a plain
+    /// equality check, not an auth check, so it still rejects the old
+    /// admin even under mock_all_auths().
+    #[test]
+    #[should_panic(expected = "unauthorized")]
+    fn old_admin_cannot_slash_after_handoff() {
+        let env = Env::default();
+        let (client, admin, _recovery) = setup(&env);
+        let curator = Address::generate(&env);
+        client.register_curator(&curator, &1_000_000);
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+
+        client.slash_curator(&admin, &curator); // old admin — must panic
+    }
+
+    #[test]
+    fn new_admin_can_slash_after_handoff() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let curator = Address::generate(&env);
+        client.register_curator(&curator, &1_000_000);
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+
+        client.slash_curator(&new_admin, &curator);
+        assert_eq!(client.get_curator_stake(&curator), 0);
     }
 }
