@@ -103,23 +103,32 @@ async function waitForWalletConnectClient(timeoutMs = 8000): Promise<WalletConne
  * soon as it's available so the caller can render its own QR/copy-link UI
  * instead of the default modal the kit opens internally.
  */
+// "display_uri" is emitted by the underlying WalletConnect Core pairing
+// engine but isn't part of the (incomplete) SignClientTypes.Event union
+// that @walletconnect/sign-client exposes on its typed on/off methods.
+interface DisplayUriEmitter {
+  on(event: "display_uri", listener: (uri: string) => void): void;
+  off(event: "display_uri", listener: (uri: string) => void): void;
+}
+
 export async function connectWalletConnect(
   onUri: (uri: string) => void
 ): Promise<{ address: string; walletId: string }> {
   const wcModule = await waitForWalletConnectClient();
+  const emitter = wcModule.signClient as unknown as DisplayUriEmitter;
 
   const handleDisplayUri = (uri: string) => {
-    wcModule.signClient.off("display_uri", handleDisplayUri);
+    emitter.off("display_uri", handleDisplayUri);
     onUri(uri);
   };
-  wcModule.signClient.on("display_uri", handleDisplayUri);
+  emitter.on("display_uri", handleDisplayUri);
 
   try {
     StellarWalletsKit.setWallet(WALLET_CONNECT_ID);
     const { address } = await StellarWalletsKit.getAddress();
     return { address, walletId: WALLET_CONNECT_ID };
   } finally {
-    wcModule.signClient.off("display_uri", handleDisplayUri);
+    emitter.off("display_uri", handleDisplayUri);
   }
 }
 
