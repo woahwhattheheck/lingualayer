@@ -250,10 +250,63 @@ impl DatasetRegistry {
     }
 }
 
+// Soroban-VM tests for the admin-handoff wrapper methods. The comment this
+// replaced said testutils couldn't compile here at all due to a transitive
+// rand_core/ed25519_dalek conflict; that no longer reproduces on the
+// current toolchain/lockfile (the other 3 contracts already exercise
+// testutils successfully), so these are exercised the same way as
+// dataset-registry's siblings rather than left untested.
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (DatasetRegistryClient<'_>, Address, Address) {
+        env.mock_all_auths();
+        let id = env.register(DatasetRegistry, ());
+        let client = DatasetRegistryClient::new(env, &id);
+        let admin = Address::generate(env);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery);
+        (client, admin, recovery)
+    }
+
+    #[test]
+    #[should_panic(expected = "recovery must differ from admin")]
+    fn initialize_rejects_recovery_equal_to_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(DatasetRegistry, ());
+        let client = DatasetRegistryClient::new(&env, &id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &admin);
+    }
+
+    #[test]
+    fn propose_then_accept_transfers_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let successor = Address::generate(&env);
+
+        client.propose_admin(&successor);
+        assert_eq!(client.pending_admin(), Some(successor.clone()));
+
+        client.accept_admin();
+        assert_eq!(client.admin(), successor);
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let rescuer = Address::generate(&env);
+
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
+    }
+}
+
 // Pure-Rust tests for the zero-hash guard — no soroban VM required.
-// The soroban testutils feature is intentionally excluded from dev-dependencies
-// to avoid a transitive rand_core/ed25519_dalek version conflict in
-// soroban-env-host that prevents test compilation on current stable Rust.
 // These tests verify the precise byte-level predicate that guards on-chain storage.
 #[cfg(test)]
 mod tests {

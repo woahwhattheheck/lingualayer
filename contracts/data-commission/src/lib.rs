@@ -655,3 +655,62 @@ mod tests {
         );
     }
 }
+
+// ── Admin handoff ────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup() -> (Env, DataCommissionClient<'static>, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(DataCommission, ());
+        let client = DataCommissionClient::new(&env, &id);
+        let admin = Address::generate(&env);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
+        (env, client, admin, recovery)
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let (_env, client, _admin, _recovery) = setup();
+        let rescuer = Address::generate(&_env);
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
+    }
+
+    /// After a full propose/accept handoff, admin-gated calls (which read the
+    /// current admin internally rather than taking it as a parameter) must
+    /// still authorize correctly against the *new* admin.
+    #[test]
+    fn fulfil_commission_still_works_after_admin_rotation() {
+        let (env, client, admin, _recovery) = setup();
+        let commissioner = Address::generate(&env);
+        let fulfiller = Address::generate(&env);
+        let amount: i128 = 1_000_000_000;
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        soroban_sdk::token::StellarAssetClient::new(&env, &token_id).mint(&commissioner, &amount);
+
+        let com_id = client.post_commission(
+            &commissioner,
+            &String::from_str(&env, "am"),
+            &soroban_sdk::BytesN::from_array(&env, &[9u8; 32]),
+            &token_id,
+            &amount,
+            &10,
+            &3600,
+            &(env.ledger().sequence() + 100),
+        );
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+        assert_eq!(client.admin(), new_admin);
+
+        client.fulfil_commission(&com_id, &fulfiller, &String::from_str(&env, "ds_am"));
+        assert_eq!(client.get_commission(&com_id).state, CommissionState::Fulfilled);
+    }
+}

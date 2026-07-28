@@ -532,3 +532,66 @@ mod test {
         client.register_curator(&curator, &1_000_000);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Admin handoff
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod access_control_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (QualityOracleClient<'_>, Address, Address) {
+        env.mock_all_auths();
+        let id = env.register(QualityOracle, ());
+        let client = QualityOracleClient::new(env, &id);
+        let admin = Address::generate(env);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery, &1_000_000);
+        (client, admin, recovery)
+    }
+
+    #[test]
+    fn recovery_takeover_bypasses_current_admin() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let rescuer = Address::generate(&env);
+        client.recovery_takeover(&rescuer);
+        assert_eq!(client.admin(), rescuer);
+    }
+
+    /// After a full propose/accept handoff, the *old* admin can no longer
+    /// pass slash_curator's stored-admin comparison — this is a plain
+    /// equality check, not an auth check, so it still rejects the old
+    /// admin even under mock_all_auths().
+    #[test]
+    #[should_panic(expected = "unauthorized")]
+    fn old_admin_cannot_slash_after_handoff() {
+        let env = Env::default();
+        let (client, admin, _recovery) = setup(&env);
+        let curator = Address::generate(&env);
+        client.register_curator(&curator, &1_000_000);
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+
+        client.slash_curator(&admin, &curator); // old admin — must panic
+    }
+
+    #[test]
+    fn new_admin_can_slash_after_handoff() {
+        let env = Env::default();
+        let (client, _admin, _recovery) = setup(&env);
+        let curator = Address::generate(&env);
+        client.register_curator(&curator, &1_000_000);
+
+        let new_admin = Address::generate(&env);
+        client.propose_admin(&new_admin);
+        client.accept_admin();
+
+        client.slash_curator(&new_admin, &curator);
+        assert_eq!(client.get_curator_stake(&curator), 0);
+    }
+}

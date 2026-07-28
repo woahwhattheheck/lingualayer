@@ -270,3 +270,43 @@ fn test_zero_base_amount_panics() {
     f.router
         .route_license(&f.caller, &dataset_id, &0, &f.token_addr, &f.recipient);
 }
+
+// ---------------------------------------------------------------------------
+// Admin handoff
+// ---------------------------------------------------------------------------
+
+#[test]
+fn recovery_takeover_bypasses_current_admin() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+    let admin = Address::generate(&env);
+    let (oracle_addr, _) = deploy_oracle(&env, &admin);
+    let (_, router) = deploy_router(&env, &admin, &oracle_addr);
+
+    let rescuer = Address::generate(&env);
+    env.mock_all_auths();
+    router.recovery_takeover(&rescuer);
+    assert_eq!(router.admin(), rescuer);
+}
+
+/// After a full propose/accept handoff, route_license (which doesn't touch
+/// admin at all) must still work unchanged — this guards against the
+/// handoff wiring accidentally disturbing the oracle binding or other
+/// instance storage.
+#[test]
+fn route_license_still_works_after_admin_rotation() {
+    let f = Fixture::new();
+    let dataset_id = f.dataset_id();
+    f.env.mock_all_auths();
+
+    let new_admin = Address::generate(&f.env);
+    f.router.propose_admin(&new_admin);
+    f.router.accept_admin();
+    assert_eq!(f.router.admin(), new_admin);
+
+    let base: i128 = 1_000_000;
+    let result = f
+        .router
+        .route_license(&f.caller, &dataset_id, &base, &f.token_addr, &f.recipient);
+    assert_eq!(result.adjusted_amount, base);
+}
