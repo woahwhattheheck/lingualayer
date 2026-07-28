@@ -178,17 +178,26 @@ All persistent entries use a TTL bump of **7 776 000 ledgers** (~90 days on Stel
 
 ## Deployment Order
 
-Because `DataCommission` and `DatasetRegistry` are independent at init time, they can be deployed in any order. `QualityOracle` also has no init-time cross-contract dependency. `LicenseRouter` and `RoyaltySplitter` will need the addresses of the other contracts injected during their production `initialize` calls.
+`QualityOracle` must be deployed before `LicenseRouter`, which binds to its address at init time (and needs its compiled wasm on disk at *build* time — see `license-router`'s `contractimport!`). `DatasetRegistry`, `DataCommission`, and `QualityOracle` have no init-time dependencies on each other. `RoyaltySplitter` is still a scaffold and doesn't take a real admin yet.
 
 Recommended order:
 
 ```
-1. DatasetRegistry.initialize(admin)
-2. DataCommission.initialize(admin)
-3. QualityOracle.initialize(admin)
-4. LicenseRouter.initialize(admin, quality_oracle_addr, royalty_splitter_addr)
-5. RoyaltySplitter.initialize(admin, dataset_registry_addr)
+1. QualityOracle.initialize(admin, recovery, min_stake)
+2. DatasetRegistry.initialize(admin, recovery)
+3. DataCommission.initialize(admin, recovery)
+4. RoyaltySplitter.initialize(admin)          — scaffold; admin is a Symbol, not an Address
+5. LicenseRouter.initialize(admin, recovery, oracle=quality_oracle_addr)
 ```
+
+## Admin & Emergency Recovery
+
+`DatasetRegistry`, `DataCommission`, `QualityOracle`, and `LicenseRouter` all take a second `recovery: Address` at `initialize` (required to differ from `admin`), backed by the shared `contracts/access-control` crate:
+
+- **Planned rotation** — `propose_admin(new_admin)` (current admin only) followed by `accept_admin()` (must be called by `new_admin` itself). Nothing changes until the successor proves they hold that key, so a typo'd or unreachable address can never brick admin control. Use this to rotate onto a fresh key, or to upgrade `admin` to a proper multi-sig Stellar account, before anything is suspected of being compromised.
+- **Emergency takeover** — `recovery_takeover(new_admin)`, callable only by the `recovery` address, forces `admin` to `new_admin` immediately with zero cooperation from the current admin. This is the answer to "the admin key is compromised": the compromised key is never needed to remove its own access. `recovery` itself can be rotated via `set_recovery` (current admin only).
+
+`RoyaltySplitter` is excluded — its `admin` is a placeholder `Symbol` with no gated behavior yet, not a real access-control root.
 
 ---
 
