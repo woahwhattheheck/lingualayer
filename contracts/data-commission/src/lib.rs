@@ -70,13 +70,47 @@ pub struct DataCommission;
 
 #[contractimpl]
 impl DataCommission {
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&symbol_short!("admin")) {
-            panic!("already initialized");
-        }
-        admin.require_auth();
-        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    /// `recovery` is a separate address that can force an admin handoff via
+    /// `recovery_takeover` without the current admin's cooperation — see
+    /// the `access-control` crate's docs for why this exists and why it
+    /// must differ from `admin`.
+    pub fn initialize(env: Env, admin: Address, recovery: Address) {
+        access_control::init(&env, &admin, &recovery);
         env.storage().instance().set(&symbol_short!("com_cnt"), &0u32);
+    }
+
+    /// Current admin proposes `new_admin`. Takes effect only once
+    /// `new_admin` calls `accept_admin` themselves.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        access_control::propose_admin(&env, &new_admin);
+    }
+
+    /// The pending admin accepts the role. Returns the new admin address.
+    pub fn accept_admin(env: Env) -> Address {
+        access_control::accept_admin(&env)
+    }
+
+    /// Emergency handoff: the recovery address forces admin to `new_admin`
+    /// immediately, with no cooperation required from the current admin.
+    pub fn recovery_takeover(env: Env, new_admin: Address) {
+        access_control::recovery_takeover(&env, &new_admin);
+    }
+
+    /// Current admin rotates the recovery address.
+    pub fn set_recovery(env: Env, new_recovery: Address) {
+        access_control::set_recovery(&env, &new_recovery);
+    }
+
+    pub fn admin(env: Env) -> Address {
+        access_control::admin(&env)
+    }
+
+    pub fn recovery_address(env: Env) -> Address {
+        access_control::recovery(&env)
+    }
+
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        access_control::pending_admin(&env)
     }
 
     pub fn post_commission(
@@ -187,11 +221,7 @@ impl DataCommission {
     /// - When the last pending milestone is released the commission
     ///   transitions to `Fulfilled`.
     pub fn approve_milestone(env: Env, commission_id: String, milestone_index: u32) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("admin"))
-            .expect("not initialized");
+        let admin = access_control::admin(&env);
         admin.require_auth();
 
         let mut comm: Commission = env
@@ -243,11 +273,7 @@ impl DataCommission {
         fulfiller: Address,
         dataset_id: String,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("admin"))
-            .expect("not initialized");
+        let admin = access_control::admin(&env);
         admin.require_auth();
 
         let mut comm: Commission = env
@@ -322,7 +348,7 @@ impl DataCommission {
     }
 
     pub fn version(_env: Env) -> u32 {
-        2
+        3
     }
 }
 

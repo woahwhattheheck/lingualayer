@@ -83,13 +83,47 @@ pub struct DatasetRegistry;
 
 #[contractimpl]
 impl DatasetRegistry {
-    pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&symbol_short!("admin")) {
-            panic!("already initialized");
-        }
-        admin.require_auth();
-        env.storage().instance().set(&symbol_short!("admin"), &admin);
+    /// `recovery` is a separate address that can force an admin handoff via
+    /// `recovery_takeover` without the current admin's cooperation — see
+    /// the `access-control` crate's docs for why this exists and why it
+    /// must differ from `admin`.
+    pub fn initialize(env: Env, admin: Address, recovery: Address) {
+        access_control::init(&env, &admin, &recovery);
         env.storage().instance().set(&symbol_short!("count"), &0u32);
+    }
+
+    /// Current admin proposes `new_admin`. Takes effect only once
+    /// `new_admin` calls `accept_admin` themselves.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        access_control::propose_admin(&env, &new_admin);
+    }
+
+    /// The pending admin accepts the role. Returns the new admin address.
+    pub fn accept_admin(env: Env) -> Address {
+        access_control::accept_admin(&env)
+    }
+
+    /// Emergency handoff: the recovery address forces admin to `new_admin`
+    /// immediately, with no cooperation required from the current admin.
+    pub fn recovery_takeover(env: Env, new_admin: Address) {
+        access_control::recovery_takeover(&env, &new_admin);
+    }
+
+    /// Current admin rotates the recovery address.
+    pub fn set_recovery(env: Env, new_recovery: Address) {
+        access_control::set_recovery(&env, &new_recovery);
+    }
+
+    pub fn admin(env: Env) -> Address {
+        access_control::admin(&env)
+    }
+
+    pub fn recovery_address(env: Env) -> Address {
+        access_control::recovery(&env)
+    }
+
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        access_control::pending_admin(&env)
     }
 
     pub fn register_dataset(
@@ -212,7 +246,7 @@ impl DatasetRegistry {
     }
 
     pub fn version(_env: Env) -> u32 {
-        3
+        4
     }
 }
 
