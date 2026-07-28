@@ -400,7 +400,8 @@ mod tests {
         let amount: i128 = 5_000_000_000; // 500 USDC
         let token = mint_token(&env, &admin, &commissioner, amount);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "en"),
@@ -431,7 +432,8 @@ mod tests {
         let amount: i128 = 5_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, amount);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "fr"),
@@ -466,7 +468,8 @@ mod tests {
         let total: i128 = 20_000_000_000; // 2 000 USDC
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "de"),
@@ -523,7 +526,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let deadline = future(&env, 300);
         let com_id = client.post_commission(
             &commissioner,
@@ -577,7 +581,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "ko"),
@@ -625,7 +630,8 @@ mod tests {
         let total: i128 = 20_000_000_000;
         let token = mint_token(&env, &admin, &commissioner, total);
 
-        client.initialize(&admin);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery);
         let com_id = client.post_commission(
             &commissioner,
             &String::from_str(&env, "zh"),

@@ -367,7 +367,8 @@ mod tests {
         let id = env.register_contract(None, QualityOracle);
         let client = QualityOracleClient::new(env, &id);
         let admin = Address::generate(env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(env);
+        client.initialize(&admin, &recovery, &1_000_000);
         (client, admin)
     }
 
@@ -456,7 +457,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator_a = Address::generate(&env);
         let curator_b = Address::generate(&env);
@@ -477,7 +479,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator = Address::generate(&env);
         client.register_curator(&curator, &1_000_000);
@@ -502,7 +505,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let stranger = Address::generate(&env);
         let stats = client.get_curator_stats(&stranger);
@@ -520,7 +524,8 @@ mod test {
         let client = QualityOracleClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        client.initialize(&admin, &1_000_000);
+        let recovery = Address::generate(&env);
+        client.initialize(&admin, &recovery, &1_000_000);
 
         let curator = Address::generate(&env);
         client.register_curator(&curator, &1_000_000);

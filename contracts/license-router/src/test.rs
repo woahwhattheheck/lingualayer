@@ -35,8 +35,9 @@ fn deploy_oracle<'a>(env: &Env, admin: &Address) -> (Address, QualityOracleClien
     let addr = env.register(QualityOracle, ());
     let client = QualityOracleClient::new(env, &addr);
     env.mock_all_auths();
+    let recovery = Address::generate(env);
     // min_stake = 1_000_000 stroops
-    client.initialize(admin, &1_000_000);
+    client.initialize(admin, &recovery, &1_000_000);
     (addr, client)
 }
 
@@ -49,7 +50,8 @@ fn deploy_router<'a>(
     let addr = env.register(LicenseRouter, ());
     let client = LicenseRouterClient::new(env, &addr);
     env.mock_all_auths();
-    client.initialize(admin, oracle);
+    let recovery = Address::generate(env);
+    client.initialize(admin, &recovery, oracle);
     (addr, client)
 }
 
@@ -239,7 +241,7 @@ fn test_version() {
     let admin = Address::generate(&env);
     let (oracle_addr, _) = deploy_oracle(&env, &admin);
     let (_, router) = deploy_router(&env, &admin, &oracle_addr);
-    assert_eq!(router.version(), 2);
+    assert_eq!(router.version(), 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +257,8 @@ fn test_double_initialize_panics() {
     let (oracle_addr, _) = deploy_oracle(&env, &admin);
     let (_, router) = deploy_router(&env, &admin, &oracle_addr);
     env.mock_all_auths();
-    router.initialize(&admin, &oracle_addr); // second call must panic
+    let recovery = Address::generate(&env);
+    router.initialize(&admin, &recovery, &oracle_addr); // second call must panic
 }
 
 #[test]
