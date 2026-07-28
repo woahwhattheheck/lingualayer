@@ -183,6 +183,20 @@ All persistent entries use a TTL bump of **7 776 000 ledgers** (~90 days on Stel
 Recommended order:
 
 ```
+1. QualityOracle.initialize(admin, min_stake)
+2. DatasetRegistry.initialize(admin)
+3. DataCommission.initialize(admin)
+4. RoyaltySplitter.initialize(admin)   — scaffold; admin is a Symbol, not an Address
+5. LicenseRouter.initialize(admin, oracle=quality_oracle_addr)
+```
+
+`contracts/scripts/deploy.sh` builds, deploys, and initializes all 5 in
+this order automatically — see the script's header comment for why
+QualityOracle has to come before LicenseRouter at *build* time too, not
+just init time. (LicenseRouter and RoyaltySplitter's signatures above
+reflect their current scaffold implementations; the multi-address
+`initialize` signatures previously sketched here are the target for
+when those two contracts are built out.)
 1. QualityOracle.initialize(admin, recovery, min_stake)
 2. DatasetRegistry.initialize(admin, recovery)
 3. DataCommission.initialize(admin, recovery)

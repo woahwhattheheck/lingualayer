@@ -159,7 +159,7 @@ All contracts are deployed and verified on **Stellar Testnet**.
 
 ### Prerequisites
 - Node.js 20+
-- Rust + `soroban-cli`
+- Rust (see `rust-toolchain.toml`) + the [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli)
 - A Stellar Testnet wallet (Freighter recommended)
 
 ### Run the Web App Locally
@@ -189,15 +189,32 @@ Backend runs at `http://localhost:4000`.
 
 ### Build & Deploy Contracts
 
-```bash
-cd lingualayer/contracts
-# Build all contracts
-cargo build --target wasm32-unknown-unknown --release
+All 5 contracts must be built with the `wasm32v1-none` target (the current
+`soroban-sdk` release no longer supports `wasm32-unknown-unknown` on Rust
+1.82+ — see `rust-toolchain.toml`), and `license-router` must be built
+*after* `quality-oracle`, since its cross-contract client is generated from
+`quality-oracle`'s compiled `.wasm` file rather than a normal Cargo
+dependency.
 
-# Deploy DatasetRegistry (example)
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/dataset_registry.wasm \
-  --source <YOUR_SECRET_KEY> \
+`contracts/scripts/deploy.sh` handles the build order, deploys all 5 with
+the [`stellar` CLI](https://developers.stellar.org/docs/tools/cli/install-cli),
+initializes them (creating and funding a deployer identity on testnet if
+needed), and writes the resulting contract IDs to
+`contracts/deployments/<network>.env`:
+
+```bash
+cd lingualayer
+NETWORK=testnet SOURCE=my-deployer ./contracts/scripts/deploy.sh
+```
+
+To build a single contract by hand instead:
+
+```bash
+cargo build --target wasm32v1-none --release -p dataset-registry
+
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/dataset_registry.wasm \
+  --source-account <YOUR_IDENTITY_OR_SECRET_KEY> \
   --network testnet
 ```
 
