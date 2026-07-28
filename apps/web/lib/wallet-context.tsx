@@ -34,8 +34,11 @@ interface WalletContextValue {
   isConnecting: boolean;
   isAuthenticating: boolean;
   error: string | null;
+  walletConnectUri: string | null;
   connect: () => Promise<void>;
   connectWithLedger: () => Promise<void>;
+  connectWithWalletConnect: () => Promise<void>;
+  cancelWalletConnect: () => void;
   disconnect: () => void;
 }
 
@@ -78,6 +81,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletConnectUri, setWalletConnectUri] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -133,6 +137,34 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [persistSession]);
 
+  const connectWithWalletConnect = useCallback(async () => {
+    setIsConnecting(true);
+    setError(null);
+    setWalletConnectUri(null);
+    try {
+      const { connectWalletConnect } = await loadWalletsKit();
+      const { address: connectedAddress } = await connectWalletConnect((uri) => {
+        setWalletConnectUri(uri);
+      });
+      setIsConnecting(false);
+      setIsAuthenticating(true);
+      const jwt = await authenticate(connectedAddress);
+      persistSession({ address: connectedAddress, token: jwt });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "WalletConnect connection failed");
+    } finally {
+      setIsConnecting(false);
+      setIsAuthenticating(false);
+      setWalletConnectUri(null);
+    }
+  }, [persistSession]);
+
+  const cancelWalletConnect = useCallback(() => {
+    setWalletConnectUri(null);
+    setIsConnecting(false);
+    setError(null);
+  }, []);
+
   const disconnect = useCallback(() => {
     loadWalletsKit().then(({ disconnectWallet }) => disconnectWallet().catch(() => {}));
     setAddress(null);
@@ -149,11 +181,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnecting,
       isAuthenticating,
       error,
+      walletConnectUri,
       connect,
       connectWithLedger,
+      connectWithWalletConnect,
+      cancelWalletConnect,
       disconnect,
     }),
-    [address, token, isConnecting, isAuthenticating, error, connect, connectWithLedger, disconnect],
+    [
+      address,
+      token,
+      isConnecting,
+      isAuthenticating,
+      error,
+      walletConnectUri,
+      connect,
+      connectWithLedger,
+      connectWithWalletConnect,
+      cancelWalletConnect,
+      disconnect,
+    ],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
