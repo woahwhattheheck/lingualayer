@@ -668,6 +668,84 @@ w3m-modal {
   color: var(--muted);
 }
 
+/* wallet-connect-qr */
+.wc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 65%, transparent);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.wc-modal {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, var(--bg)) 0%, var(--surface) 100%);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 340px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.wc-modal-title {
+  margin: 0;
+  font-weight: 650;
+  font-size: 1rem;
+  color: var(--text);
+}
+.wc-modal-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.wc-qr-frame {
+  width: 240px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.wc-qr-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+.wc-copy-btn {
+  width: 100%;
+  padding: 11px 18px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #061018;
+  font-weight: 700;
+  font-size: 0.93rem;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.wc-copy-btn:hover:not(:disabled) { opacity: 0.88; }
+.wc-copy-btn:disabled { opacity: 0.6; cursor: default; }
+.wc-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* ── attestation page ─────────────────────────────────────────────────── */
 
 .attest-layout {
