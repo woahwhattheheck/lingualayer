@@ -47,14 +47,21 @@ OUT_FILE="${OUT_DIR}/${NETWORK}.env"
 
 # Build order doubles as deploy/init order — see the header comment above
 # for why QualityOracle must come before LicenseRouter.
+#
+# (Deliberately not using associative arrays here: macOS ships bash 3.2,
+# which doesn't support them, and this script needs to run there too.)
 PACKAGES=(quality-oracle dataset-registry data-commission royalty-splitter license-router)
-declare -A WASM_NAME=(
-  [quality-oracle]="quality_oracle"
-  [dataset-registry]="dataset_registry"
-  [data-commission]="data_commission"
-  [royalty-splitter]="royalty_splitter"
-  [license-router]="license_router"
-)
+
+wasm_name() {
+  case "$1" in
+    quality-oracle) echo "quality_oracle" ;;
+    dataset-registry) echo "dataset_registry" ;;
+    data-commission) echo "data_commission" ;;
+    royalty-splitter) echo "royalty_splitter" ;;
+    license-router) echo "license_router" ;;
+    *) echo "error: unknown package '$1'" >&2; exit 1 ;;
+  esac
+}
 
 CLI="stellar"
 if ! command -v "$CLI" >/dev/null 2>&1; then
@@ -91,7 +98,7 @@ done
 
 deploy() {
   local pkg="$1"
-  local wasm="${WASM_DIR}/${WASM_NAME[$pkg]}.wasm"
+  local wasm="${WASM_DIR}/$(wasm_name "$pkg").wasm"
   "$CLI" contract deploy \
     --wasm "$wasm" \
     --source-account "$SOURCE" \
