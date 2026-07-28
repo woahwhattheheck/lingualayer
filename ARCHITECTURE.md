@@ -183,12 +183,20 @@ Because `DataCommission` and `DatasetRegistry` are independent at init time, the
 Recommended order:
 
 ```
-1. DatasetRegistry.initialize(admin)
-2. DataCommission.initialize(admin)
-3. QualityOracle.initialize(admin)
-4. LicenseRouter.initialize(admin, quality_oracle_addr, royalty_splitter_addr)
-5. RoyaltySplitter.initialize(admin, dataset_registry_addr)
+1. QualityOracle.initialize(admin, min_stake)
+2. DatasetRegistry.initialize(admin)
+3. DataCommission.initialize(admin)
+4. RoyaltySplitter.initialize(admin)   — scaffold; admin is a Symbol, not an Address
+5. LicenseRouter.initialize(admin, oracle=quality_oracle_addr)
 ```
+
+`contracts/scripts/deploy.sh` builds, deploys, and initializes all 5 in
+this order automatically — see the script's header comment for why
+QualityOracle has to come before LicenseRouter at *build* time too, not
+just init time. (LicenseRouter and RoyaltySplitter's signatures above
+reflect their current scaffold implementations; the multi-address
+`initialize` signatures previously sketched here are the target for
+when those two contracts are built out.)
 
 ---
 
