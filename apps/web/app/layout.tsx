@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { NetworkBanner } from "@/components/network-banner";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { WalletConnectButton } from "@/components/wallet-connect-button";
 import { WalletProvider } from "@/lib/wallet-context";
 import "./globals.css";
+import "./theme.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),
@@ -65,7 +67,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <Link key={href} href={href}>{label}</Link>
                 ))}
               </nav>
-              <WalletConnectButton />
+              <div className="nav-actions">
+                <ThemeToggle />
+                <WalletConnectButton />
+              </div>
             </div>
           </header>
           <main className="container">{children}</main>
