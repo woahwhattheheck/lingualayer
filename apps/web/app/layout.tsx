@@ -33,6 +33,26 @@ export const metadata: Metadata = {
   },
 };
 
+const themeScript = `
+  (() => {
+    try {
+      const key = "lingualayer-theme";
+      const stored = window.localStorage.getItem(key);
+      const theme =
+        stored === "light" || stored === "dark"
+          ? stored
+          : window.matchMedia?.("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    } catch {
+      document.documentElement.dataset.theme = "dark";
+      document.documentElement.style.colorScheme = "dark";
+    }
+  })();
+`;
+
 const nav = [
   ["Communities", "/communities"],
   ["Licensing", "/licensing"],
@@ -45,7 +65,10 @@ const nav = [
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script id="theme-init" dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <WalletProvider>
           <NetworkBanner />
